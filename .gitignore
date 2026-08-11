@@ -1,0 +1,74 @@
+# macOS and editor metadata
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python bytecode, caches, coverage, and tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Virtual environments and locally installed dependencies
+.venv/
+venv/
+env/
+ENV/
+.pdf-venv/
+.pdf_deps/
+
+# Application/runtime caches and temporary files
+.app_cache/
+tmp/
+temp/
+*.tmp
+*.log
+
+# Generated reports, previews, and reconciliation outputs
+output/
+outputs/
+*.pdf
+*.docx
+*.zip
+APPLICATION_LOGIC_AUDIT.md
+GOOGLE_DRIVE_SETUP.md
+
+# Runtime finance data and spreadsheet exports
+*.csv
+*.xlsx
+*.xls
+*.xlsm
+*.tsv
+
+# Local secrets and environment configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+.streamlit/secrets.toml
+
+# Local AI/editor-agent configuration
+.claude/
+.agents/
+.codex/
+.github/copilot-instructions.md
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
