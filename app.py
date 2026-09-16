@@ -20,12 +20,14 @@ from time import perf_counter
 import streamlit as st
 
 from collection_filtering import (
+    AIRTEL_TIGO_WALLETS,
     ITC_COLLECTION_FILTERS,
     MAMBU_COLLECTION_FILTERS,
     MAMBU_DISBURSEMENT_FILTERS,
     NSANO_COLLECTION_FILTERS,
     VODAFONE_COLLECTION_CLEANUP_FILTERS,
     build_itc_collection_filter_workbook,
+    build_airtel_tigo_wallet_ledger_workbook,
     build_mambu_collection_filter_workbook,
     build_mambu_disbursement_filter_workbook,
     build_nsano_collection_filter_workbook,
@@ -611,6 +613,7 @@ ARCHIVABLE_RESULTS = {
     "voda_collection_cleanup_result": ("Filtering", "Voda Collection Cleanup", "Voda_Collection_Cleaned.xlsx"),
     "voda_wallet_ledger_result": ("Ledger", "Voda Wallet vs Ledger", "Voda_Wallet_vs_Ledger.xlsx"),
     "vodafone_manual_wallet_ledger_result": ("Ledger", "Vodafone Manual Wallet vs Ledger", "Vodafone_Manual_Wallet_vs_Ledger.xlsx"),
+    "airtel_tigo_wallet_ledger_result": ("Ledger", "Airtel/Tigo Wallet vs Ledger", "Airtel_Tigo_Wallet_vs_Ledger.xlsx"),
     "zenith_wallet_ledger_result": ("Ledger", "Zenith Wallet vs Ledger", "Zenith_Wallet_vs_Ledger.xlsx"),
     "collections_summary_sheet_result": ("Summary", "Collections Recon Summary", "Collections_Recon_Summary.xlsx"),
     "disbursement_summary_sheet_result": ("Summary", "Disbursement Recon Summary", "Disbursement_Recon_Summary.xlsx"),
@@ -2214,6 +2217,16 @@ def _master_ledger_status_rows(state: dict) -> list[dict[str, str]]:
         ) if vodafone_manual else "",
         "Ledger Balance": f"{_decimal_amount(vodafone_manual_metrics.get('balance')):,.2f}" if vodafone_manual else "",
         "Wallet Statement Balance": f"{_decimal_amount(vodafone_manual_metrics.get('wallet_statement_balance')):,.2f}" if vodafone_manual else "",
+    })
+
+    airtel_tigo = state.get("airtel_tigo_wallet_ledger_result")
+    airtel_tigo_metrics = airtel_tigo.get("metrics", {}) if isinstance(airtel_tigo, dict) else {}
+    rows.append({
+        "Workflow": "Airtel/Tigo Wallet vs Ledger",
+        "Status": "Ready" if airtel_tigo else "Not run",
+        "Rows": f"{int(airtel_tigo_metrics.get('wallet_count', 0)):,} wallets" if airtel_tigo else "",
+        "Ledger Balance": "",
+        "Wallet Statement Balance": f"{_decimal_amount(airtel_tigo_metrics.get('total_wallet_balance')):,.2f}" if airtel_tigo else "",
     })
     return rows
 
@@ -4064,6 +4077,105 @@ def render_itc_wallet_ledger_tab() -> None:
     )
 
 
+def render_airtel_tigo_wallet_ledger_tab() -> None:
+    workflow = "Airtel/Tigo Wallet vs Ledger"
+    result_key = "airtel_tigo_wallet_ledger_result"
+    st.subheader(workflow)
+    st.caption(
+        "Enter the six ledger values for each wallet. Positive delayed transactions are credits; "
+        "negative delayed transactions are debits."
+    )
+
+    field_specs = (
+        ("opening_balance", "Opening Balance as per Ledger"),
+        ("total_repayment", "Total Repayment"),
+        ("interest_received", "Interest Received"),
+        ("charges", "Charges"),
+        ("total_disbursement", "Total Disbursement"),
+        ("delayed_transaction", "Delayed Transaction"),
+    )
+    wallet_inputs: dict[str, dict[str, Decimal]] = {}
+    input_error = False
+    for wallet_name, account_number in AIRTEL_TIGO_WALLETS:
+        with st.expander(f"{wallet_name} — {account_number}", expanded=True):
+            wallet_values: dict[str, Decimal] = {}
+            for row_start in (0, 3):
+                columns = st.columns(3)
+                for column, (field_name, label) in zip(columns, field_specs[row_start:row_start + 3]):
+                    with column:
+                        text_value = st.text_input(
+                            f"{label} (GHC)",
+                            value="0.00",
+                            key=f"airtel_tigo_{account_number}_{field_name}",
+                        )
+                        parsed = _parse_wallet_ledger_amount(text_value, f"{wallet_name} {label}")
+                        if parsed is None:
+                            input_error = True
+                            parsed = Decimal("0")
+                        wallet_values[field_name] = parsed
+            wallet_inputs[wallet_name] = wallet_values
+
+    run_clicked = st.button(
+        f"Run {workflow}",
+        type="primary",
+        disabled=input_error,
+        key="run_airtel_tigo_wallet_ledger",
+    )
+    if run_clicked:
+        st.session_state.pop(result_key, None)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "Airtel_Tigo_Wallet_vs_Ledger.xlsx"
+            try:
+                with st.spinner(f"Building {workflow} workbook..."):
+                    metrics = build_airtel_tigo_wallet_ledger_workbook(
+                        output_path,
+                        wallet_inputs,
+                    )
+                    st.session_state[result_key] = _mark_master_archive(
+                        {
+                            "metrics": metrics,
+                            "output_bytes": output_path.read_bytes(),
+                        },
+                        _current_archive_month(),
+                    )
+                with st.spinner(f"Saving {workflow} to the Google Drive archive..."):
+                    _saved_count, archive_errors = _archive_master_results((result_key,))
+                if archive_errors:
+                    st.warning(_archive_warning_text(archive_errors))
+            except Exception as exc:
+                st.error(f"{workflow} failed: {exc}")
+                return
+
+    result = st.session_state.get(result_key)
+    if not result:
+        return
+    metrics = result.get("metrics", {})
+    st.markdown("---")
+    st.subheader("Results")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Available Funds", f"{_decimal_amount(metrics.get('total_available_funds')):,.2f}")
+    c2.metric("Total Debit", f"{_decimal_amount(metrics.get('total_debit')):,.2f}")
+    c3.metric("Combined Wallet Balance", f"{_decimal_amount(metrics.get('total_wallet_balance')):,.2f}")
+    st.table(_arrow_safe_rows([
+        {
+            "Wallet": wallet_name,
+            "Number": values.get("account_number", ""),
+            "Available Funds": values.get("available_funds", Decimal("0")),
+            "Total Debit": values.get("total_debit", Decimal("0")),
+            "Balance as per Wallet": values.get("wallet_balance", Decimal("0")),
+        }
+        for wallet_name, values in metrics.get("wallets", {}).items()
+    ]))
+    st.download_button(
+        label="Download Airtel/Tigo Wallet vs Ledger",
+        data=result["output_bytes"],
+        file_name="Airtel_Tigo_Wallet_vs_Ledger.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        key="download_airtel_tigo_wallet_ledger",
+    )
+
+
 def _render_filtering_automation(automation_options: list[str], radio_key: str) -> None:
     automation = st.radio(
         "Filtering Automation",
@@ -4644,6 +4756,7 @@ def render_monthly_summary_tab() -> None:
         "nsano_wallet_ledger_result",
         "itc_wallet_ledger_result",
         "vodafone_manual_wallet_ledger_result",
+        "airtel_tigo_wallet_ledger_result",
     }
 
     use_snapshot = snapshot if include_collections else {k: v for k, v in snapshot.items() if k in DISBURSEMENT_ONLY_KEYS}
@@ -4730,10 +4843,11 @@ with disbursement_tab:
     render_disbursement_master_tab()
 
 with ledger_tab:
-    nsano_collection_ledger_tab, nsano_disb_ledger_tab, itc_ledger_tab, wallet_ledger_filtering_tab = st.tabs([
+    nsano_collection_ledger_tab, nsano_disb_ledger_tab, itc_ledger_tab, airtel_tigo_ledger_tab, wallet_ledger_filtering_tab = st.tabs([
         "Nsano Collections vs Ledger",
         "Nsano Disb Wallet vs Ledger",
         "ITC Wallet vs Ledger",
+        "Airtel/Tigo Wallet vs Ledger",
         "Voda & Zenith Ledger",
     ])
 
@@ -4745,6 +4859,9 @@ with ledger_tab:
 
     with itc_ledger_tab:
         render_itc_wallet_ledger_tab()
+
+    with airtel_tigo_ledger_tab:
+        render_airtel_tigo_wallet_ledger_tab()
 
     with wallet_ledger_filtering_tab:
         render_wallet_ledger_filtering_tab()
