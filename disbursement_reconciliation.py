@@ -41,6 +41,7 @@ from build_reconciliation_template import (
     STYLE_WALLET_FINAL_LABEL,
     STYLE_WALLET_FINAL_MONEY,
     STYLE_WALLET_HEADER,
+    STYLE_WALLET_LINE_ITEM,
     STYLE_WALLET_MONEY,
     STYLE_WALLET_SECTION,
     STYLE_WALLET_SIGNATURE,
@@ -81,7 +82,7 @@ DISB_NOT_FOUND_STATUS = "not found"
 ITC_DISB_STATUS = "ITC"
 ITC_DISB_NOT_FOUND_STATUS = "not_found"
 ITC_DISB_REFERRAL_BONUS_STATUS = "referral bonus"
-ITC_DISB_UPSALES_REFOUND_STATUS = "upsales refound"
+ITC_DISB_UPSALES_REFOUND_STATUS = "upsales refund"
 ITC_DISB_SAVINGS_REWARD_STATUS = "savings reward"
 MTN_MANUAL_MATCHED_STATUS = "Matched"
 MTN_MANUAL_MAMBU_STATUS = "Mambu"
@@ -454,6 +455,8 @@ NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS: list[str] = [
     "Purpose",
     "Transfer Amount (GHC)",
     "Transfer Category",
+    "Narration Exception",
+    "Exception Reason",
     "TOP-UP Through Collection with Date",
     "Bank to Wallet",
     "Reversal Adjustment",
@@ -1783,9 +1786,30 @@ def compact_wallet_text(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
 
 
+NSANO_COLLECTION_PURPOSE_PATTERN = re.compile(
+    r"^\s*top[\s-]*up\s+(?:through\s+)?"
+    r"(?P<collection>collections?|collectrion|colletion|coll)\b",
+    re.IGNORECASE,
+)
+NSANO_COLLECTION_PURPOSE_EXCEPTIONS = {
+    "collectrion": "Spelling variation: collectrion interpreted as collection",
+    "colletion": "Spelling variation: colletion interpreted as collection",
+    "coll": "Abbreviation: coll interpreted as collection",
+}
+
+
+def nsano_collection_purpose_exception(value: Any) -> str:
+    """Return an exception reason for an accepted nonstandard collection purpose."""
+    match = NSANO_COLLECTION_PURPOSE_PATTERN.search(str(value or ""))
+    if match is None:
+        return ""
+    collection_word = match.group("collection").casefold()
+    return NSANO_COLLECTION_PURPOSE_EXCEPTIONS.get(collection_word, "")
+
+
 def classify_nsano_transfer_purpose(value: Any) -> str:
     compact = compact_wallet_text(value)
-    if "topup" in compact and "collection" in compact:
+    if NSANO_COLLECTION_PURPOSE_PATTERN.search(str(value or "")):
         return NSANO_WALLET_TOPUP_COLLECTION_STATUS
     if "topup" in compact and "stanbic" in compact:
         return NSANO_WALLET_BANK_TO_WALLET_STATUS
@@ -1810,6 +1834,9 @@ def build_nsano_transfer_classification_rows(
         row["Purpose"] = purpose
         row["Transfer Amount (GHC)"] = amount
         row["Transfer Category"] = category
+        exception_reason = nsano_collection_purpose_exception(purpose)
+        row["Narration Exception"] = "Yes" if exception_reason else ""
+        row["Exception Reason"] = exception_reason
         row["TOP-UP Through Collection with Date"] = (
             amount if category == NSANO_WALLET_TOPUP_COLLECTION_STATUS else ""
         )
@@ -2327,6 +2354,9 @@ def build_itc_wallet_ledger_summary(
     def sig(label: str) -> Cell:
         return Cell(label, STYLE_WALLET_SIGNATURE)
 
+    def line(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_LINE_ITEM)
+
     rows = [
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell(f"WALLET RECONCILIATION {month_title}", STYLE_WALLET_TITLE), "", "", ""],
@@ -2334,23 +2364,23 @@ def build_itc_wallet_ledger_summary(
         [wh(f"Date - {month_short}"), wh("Amount (GHC)"), wh("ITC Disbursement"), ""],
         [wb("Balance as per ledger"), wbm(ledger_balance), "", ""],
         [ws("Credit / Available Funds"), "", "", ""],
-        [sig("Settlement"), wm(settlement), "", ""],
-        [sig("Reversal"), wm(reversal), "", ""],
-        [sig("Transfer from Bank"), wm(transfer_to_wallet), "", ""],
+        [line("Settlement"), wm(settlement), "", ""],
+        [line("Reversal"), wm(reversal), "", ""],
+        [line("Transfer from Bank"), wm(transfer_to_wallet), "", ""],
     ]
     if unidentified_credit:
-        rows.append([sig("Unidentified"), wm(unidentified_credit), "", ""])
+        rows.append([line("Unidentified"), wm(unidentified_credit), "", ""])
     rows.extend([
         [wb("Available Funds Before Debit"), wbm(available_funds), "", ""],
         ["", "", "", ""],
-        [sig("Transfer to Bank"), wm(transfer_to_bank), "", ""],
-        [sig("Referral Awards"), wm(referral_awards), "", ""],
-        [sig("Savings"), wm(savings), "", ""],
-        [sig("Upsales Refund"), wm(upsales_refund), "", ""],
-        [sig("Disbursement"), wm(disbursement), "", ""],
+        [line("Transfer to Bank"), wm(transfer_to_bank), "", ""],
+        [line("Referral Awards"), wm(referral_awards), "", ""],
+        [line("Savings"), wm(savings), "", ""],
+        [line("Upsales Refund"), wm(upsales_refund), "", ""],
+        [line("Disbursement"), wm(disbursement), "", ""],
     ])
     if unidentified_debit:
-        rows.append([sig("Unidentified"), wm(unidentified_debit), "", ""])
+        rows.append([line("Unidentified"), wm(unidentified_debit), "", ""])
     rows.extend([
         [wb("TOTAL DEBIT"), wbm(total_debit), "", ""],
         ["", "", "", ""],
@@ -2494,6 +2524,9 @@ def build_nsano_wallet_ledger_summary(
     def sig(label: str) -> Cell:
         return Cell(label, STYLE_WALLET_SIGNATURE)
 
+    def line(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_LINE_ITEM)
+
     rows = [
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell(f"WALLET RECONCILIATION {month_title}", STYLE_WALLET_TITLE), "", "", ""],
@@ -2502,28 +2535,28 @@ def build_nsano_wallet_ledger_summary(
         [wb("Balance as per ledger"), wbm(ledger_balance), "", ""],
     ]
     if reversal_ledger:
-        rows.append([sig("Reversal"), wm(reversal_ledger), "", ""])
+        rows.append([line("Reversal"), wm(reversal_ledger), "", ""])
     rows.extend([
         [ws("Credit / Available Funds"), "", "", ""],
-        [sig(credit_collection_label), wm(topup_collections), "", ""],
-        [sig("Bank to Wallet"), wm(bank_to_wallet), "", ""],
-        [sig("Reversal Adjustment"), wm(reversal_adjustment), "", ""],
-        [sig("Recovery from write off"), wm(manual_settlement), "", ""],
+        [line(credit_collection_label), wm(topup_collections), "", ""],
+        [line("Bank to Wallet"), wm(bank_to_wallet), "", ""],
+        [line("Reversal Adjustment"), wm(reversal_adjustment), "", ""],
+        [line("Recovery from write off"), wm(manual_settlement), "", ""],
     ])
     if unidentified_available_funds:
-        rows.append([sig("Delayed Transactions"), wm(unidentified_available_funds), "", ""])
+        rows.append([line("Delayed Transactions"), wm(unidentified_available_funds), "", ""])
     if reversal_available_funds:
-        rows.append([sig("Reversal"), wm(reversal_available_funds), "", ""])
+        rows.append([line("Reversal"), wm(reversal_available_funds), "", ""])
     rows.extend([
         [wb("Available Funds Before Debit"), wbm(available_funds), "", ""],
         ["", "", "", ""],
-        [sig("Transfer to Bank"), wm(transfer_to_bank), "", ""],
-        [sig("Disbursement"), wm(disbursement), "", ""],
+        [line("Transfer to Bank"), wm(transfer_to_bank), "", ""],
+        [line("Disbursement"), wm(disbursement), "", ""],
     ])
     if charge_amount is not None:
-        rows.append([sig(charge_label), wm(charges), "", ""])
+        rows.append([line(charge_label), wm(charges), "", ""])
     if unidentified_debit:
-        rows.append([sig("Delayed Transactions"), wm(unidentified_debit), "", ""])
+        rows.append([line("Delayed Transactions"), wm(unidentified_debit), "", ""])
     rows.extend([
         [wb("TOTAL DEBIT"), wbm(total_debit), "", ""],
         ["", "", "", ""],
@@ -2599,7 +2632,7 @@ def itc_disb_instruction_rows() -> list[list[Any]]:
         ],
         [
             "ITC Wallet vs Mambu",
-            "ITC Wallet is the source. Match Status is mambu when the identifier is found in Mambu. Unmatched _2, _3, and _6 narrations are classified as referral bonus, upsales refound, and savings reward.",
+            "ITC Wallet is the source. Match Status is mambu when the identifier is found in Mambu. Unmatched _2, _3, and _6 narrations are classified as referral bonus, upsales refund, and savings reward.",
         ],
     ]
 
@@ -2641,7 +2674,7 @@ def nsano_wallet_ledger_instruction_rows() -> list[list[Any]]:
         ],
         [
             "Nsano Transfers",
-            "Column E Purpose is classified into Top-up through collections, Bank to Wallet, Reversal Adjustment, and Transfer to Bank.",
+            "Column E Purpose is classified into Top-up through collections, Bank to Wallet, Reversal Adjustment, and Transfer to Bank. Approved collection spelling variations are included and marked in the Narration Exception columns.",
         ],
         [
             "Mambu",
@@ -2676,7 +2709,7 @@ def nsano_collection_ledger_instruction_rows() -> list[list[Any]]:
         ],
         [
             "Nsano Transfers",
-            "Column E Purpose is classified into Bank to Wallet, Reversal Adjustment, and Transfer to Bank. Top-up rows are retained for audit but not used as the collections credit line.",
+            "Column E Purpose is classified into Bank to Wallet, Reversal Adjustment, and Transfer to Bank. Top-up rows, including approved spelling variations, are retained for audit and variations are marked in the Narration Exception columns; they are not used as the collections credit line.",
         ],
         [
             "Nsano Filtered Data (optional)",
@@ -3047,6 +3080,7 @@ def write_itc_wallet_ledger_workbook(
         "Summary",
         "ITC Credit Transfers",
         "Debit Transfers vs Statement",
+        "ITC Not Found",
         "ITC Statement",
         "ITC Debit Transfers",
         "Raw Credit Transfers",
@@ -3072,6 +3106,14 @@ def write_itc_wallet_ledger_workbook(
     debit_comparison_preview = (
         [row.get(header, "") for header in ITC_WALLET_DEBIT_COMPARISON_HEADERS]
         for row in debit_comparison_rows[:5000]
+    )
+    not_found_rows = [
+        row for row in debit_comparison_rows
+        if str(row.get("Match Status", "")) == ITC_WALLET_NOT_FOUND_STATUS
+    ]
+    not_found_preview = (
+        [row.get(header, "") for header in ITC_WALLET_DEBIT_COMPARISON_HEADERS]
+        for row in not_found_rows[:5000]
     )
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
@@ -3128,6 +3170,15 @@ def write_itc_wallet_ledger_workbook(
         write_worksheet(
             zf,
             "xl/worksheets/sheet5.xml",
+            rows_from_dicts(ITC_WALLET_DEBIT_COMPARISON_HEADERS, not_found_rows),
+            len(not_found_rows) + 1,
+            len(ITC_WALLET_DEBIT_COMPARISON_HEADERS),
+            compute_widths(ITC_WALLET_DEBIT_COMPARISON_HEADERS, not_found_preview),
+            style_func=disb_compare_style(ITC_WALLET_DEBIT_COMPARISON_HEADERS),
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet6.xml",
             rows_from_dicts(statement_headers, statement_rows),
             len(statement_rows) + 1,
             len(statement_headers),
@@ -3136,7 +3187,7 @@ def write_itc_wallet_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet6.xml",
+            "xl/worksheets/sheet7.xml",
             rows_from_dicts(debit_headers, debit_rows),
             len(debit_rows) + 1,
             len(debit_headers),
@@ -3145,7 +3196,7 @@ def write_itc_wallet_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet7.xml",
+            "xl/worksheets/sheet8.xml",
             rows_from_dicts(credit_headers, credit_rows),
             len(credit_rows) + 1,
             len(credit_headers),
@@ -3173,6 +3224,7 @@ def write_nsano_wallet_ledger_workbook(
         "Instructions",
         "Summary",
         "Nsano Transfers Classified",
+        "Nsano Not Found",
         "Mambu",
         "Nsano Disbursement",
         "Nsano Transfers",
@@ -3194,6 +3246,14 @@ def write_nsano_wallet_ledger_workbook(
     classification_preview = (
         [row.get(header, "") for header in NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS]
         for row in transfer_classification_rows[:5000]
+    )
+    not_found_rows = [
+        row for row in transfer_classification_rows
+        if str(row.get("Transfer Category", "")) == NSANO_WALLET_OTHER_STATUS
+    ]
+    not_found_preview = (
+        [row.get(header, "") for header in NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS]
+        for row in not_found_rows[:5000]
     )
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
@@ -3241,6 +3301,15 @@ def write_nsano_wallet_ledger_workbook(
         write_worksheet(
             zf,
             "xl/worksheets/sheet4.xml",
+            rows_from_dicts(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS, not_found_rows),
+            len(not_found_rows) + 1,
+            len(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS),
+            compute_widths(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS, not_found_preview),
+            style_func=disb_compare_style(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS),
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet5.xml",
             record_rows(mambu_headers, mambu_records),
             len(mambu_records) + 1,
             len(mambu_headers),
@@ -3249,7 +3318,7 @@ def write_nsano_wallet_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet5.xml",
+            "xl/worksheets/sheet6.xml",
             record_rows(nsano_disb_headers, nsano_disb_records),
             len(nsano_disb_records) + 1,
             len(nsano_disb_headers),
@@ -3258,7 +3327,7 @@ def write_nsano_wallet_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet6.xml",
+            "xl/worksheets/sheet7.xml",
             rows_from_dicts(transfer_headers, transfer_rows),
             len(transfer_rows) + 1,
             len(transfer_headers),
@@ -3292,6 +3361,7 @@ def write_nsano_collection_ledger_workbook(
         "Instructions",
         "Summary",
         "Nsano Transfers Classified",
+        "Nsano Not Found",
         "Mambu Collections",
         "Mambu Disbursements",
         "Nsano Charges",
@@ -3318,6 +3388,14 @@ def write_nsano_collection_ledger_workbook(
     classification_preview = (
         [row.get(header, "") for header in NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS]
         for row in transfer_classification_rows[:5000]
+    )
+    not_found_rows = [
+        row for row in transfer_classification_rows
+        if str(row.get("Transfer Category", "")) == NSANO_WALLET_OTHER_STATUS
+    ]
+    not_found_preview = (
+        [row.get(header, "") for header in NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS]
+        for row in not_found_rows[:5000]
     )
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
@@ -3365,6 +3443,15 @@ def write_nsano_collection_ledger_workbook(
         write_worksheet(
             zf,
             "xl/worksheets/sheet4.xml",
+            rows_from_dicts(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS, not_found_rows),
+            len(not_found_rows) + 1,
+            len(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS),
+            compute_widths(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS, not_found_preview),
+            style_func=disb_compare_style(NSANO_WALLET_TRANSFER_CLASSIFICATION_HEADERS),
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet5.xml",
             record_rows(mambu_collection_headers, mambu_collection_records),
             len(mambu_collection_records) + 1,
             len(mambu_collection_headers),
@@ -3373,7 +3460,7 @@ def write_nsano_collection_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet5.xml",
+            "xl/worksheets/sheet6.xml",
             record_rows(mambu_disb_headers, mambu_disb_records),
             len(mambu_disb_records) + 1,
             len(mambu_disb_headers),
@@ -3382,7 +3469,7 @@ def write_nsano_collection_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet6.xml",
+            "xl/worksheets/sheet7.xml",
             record_rows(nsano_charge_headers, nsano_charge_records),
             len(nsano_charge_records) + 1,
             len(nsano_charge_headers),
@@ -3391,7 +3478,7 @@ def write_nsano_collection_ledger_workbook(
         )
         write_worksheet(
             zf,
-            "xl/worksheets/sheet7.xml",
+            "xl/worksheets/sheet8.xml",
             rows_from_dicts(transfer_headers, transfer_rows),
             len(transfer_rows) + 1,
             len(transfer_headers),

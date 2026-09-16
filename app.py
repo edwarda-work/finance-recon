@@ -2668,6 +2668,7 @@ def render_collections_master_tab() -> None:
                             "itc_amount": sum_amounts(itc_records),
                             "vodafone_amount": sum_amounts(vodafone_records),
                             "itc_charge_summary": _summarize_charge_values(itc_records, "fees", "elevy_charge"),
+                            "itc_fee_breakdowns": itc_fee_breakdowns,
                             "itc_settlement_summary": _summarize_settlement_records(itc_records, "amount", "net_amount"),
                             "vodafone_charge_summary": vodafone_charge_summary,
                             "daily_summary": {
@@ -3728,7 +3729,7 @@ def render_nsano_wallet_ledger_tab() -> None:
         )
     with field3:
         settlement_text = st.text_input(
-            "Recovery from write off (GHC)",
+            "Last Days Collection (GHC)",
             value="0.00",
             key="master_ledger_nsano_settlement",
         )

@@ -13,6 +13,7 @@ from collections_master_summary import (
     _daily_wallet_sheet_rows,
     _write_off_analysis_rows,
     collection_mambu_source_summary_rows,
+    charges_summary_rows,
     master_summary_dashboard_rows,
     master_daily_sheet_specs,
     master_not_found_sheet_specs,
@@ -25,6 +26,34 @@ from zenith_collection_reconciliation import (
 
 
 class CollectionMambuSummaryTests(unittest.TestCase):
+    def test_itc_collection_charges_are_split_between_loans_and_upsales(self):
+        state = {
+            "itc_result": {
+                "itc_charge_summary": {"count": 5, "amount": Decimal("17")},
+                "itc_fee_breakdowns": {
+                    "commission_charge_itc_payment": {
+                        "count": 3,
+                        "amount": Decimal("12"),
+                    },
+                    "upsales_transaction_fees": {
+                        "count": 2,
+                        "amount": Decimal("5"),
+                    },
+                },
+            },
+        }
+
+        rows = charges_summary_rows(state)
+
+        self.assertEqual(
+            [row["Wallet"] for row in rows],
+            ["Nsano", "Itc · Loan", "Itc · Upsale", "Vodafone", "Zenith"],
+        )
+        self.assertEqual(rows[1]["Count"], 3)
+        self.assertEqual(rows[1]["Amount"], Decimal("12"))
+        self.assertEqual(rows[2]["Count"], 2)
+        self.assertEqual(rows[2]["Amount"], Decimal("5"))
+
     def test_disbursement_master_summary_breaks_down_not_found_by_side(self):
         state = {
             "nsano_disb_result": {

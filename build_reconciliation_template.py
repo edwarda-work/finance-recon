@@ -2957,6 +2957,7 @@ STYLE_DASH_TABLE_MONEY_LARGE = 88
 STYLE_DASH_TABLE_TOTAL_LABEL_LARGE = 89
 STYLE_DASH_TABLE_TOTAL_COUNT_LARGE = 90
 STYLE_DASH_TABLE_TOTAL_MONEY_LARGE = 91
+STYLE_WALLET_LINE_ITEM = 92
 
 
 def _normalize_theme_hex(value: Any, fallback: str) -> str:
@@ -3141,7 +3142,7 @@ def styles_xml() -> str:
     <border><left/><right/><top style="thin"><color rgb="{line}"/></top><bottom/><diagonal/></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="92">
+  <cellXfs count="93">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
@@ -3234,6 +3235,7 @@ def styles_xml() -> str:
     <xf numFmtId="0" fontId="39" fillId="19" borderId="4" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
     <xf numFmtId="166" fontId="39" fillId="19" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right"/></xf>
     <xf numFmtId="167" fontId="39" fillId="19" borderId="4" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="12" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>

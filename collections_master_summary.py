@@ -122,7 +122,7 @@ MASTER_SUMMARY_RESULT_KEYS = (
     "vodafone_manual_disb_result",
 )
 
-MASTER_SUMMARY_LAYOUT_VERSION = "dashboard-v14-ambiguous-source-breakdown"
+MASTER_SUMMARY_LAYOUT_VERSION = "dashboard-v15-itc-charge-breakdown"
 
 MASTER_SUMMARY_COLLECTION_KEYS = MASTER_SUMMARY_RESULT_KEYS[:4]
 MASTER_SUMMARY_DISBURSEMENT_KEYS = MASTER_SUMMARY_RESULT_KEYS[4:]
@@ -131,6 +131,7 @@ MASTER_SUMMARY_FIELDS = {
     "nsano_result": ("charge_summary", "settlement_summary", "daily_summary", "mvn", "nvm"),
     "itc_result": (
         "itc_charge_summary",
+        "itc_fee_breakdowns",
         "itc_settlement_summary",
         "vodafone_charge_summary",
         "vodafone_settlement_summary",
@@ -1436,11 +1437,36 @@ def refund_summary_rows(state: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def charges_summary_rows(state: Mapping[str, Any]) -> list[dict[str, Any]]:
-    return [
+    rows = [
         _summary_row(wallet, charges)
         for wallet, charges, _settlement, _write_off, _refund, _unidentified
         in collection_exception_wallet_summaries(state)
+        if wallet != "Itc"
     ]
+
+    itc = state.get("itc_result", {})
+    fee_breakdowns = itc.get("itc_fee_breakdowns", {}) if isinstance(itc, Mapping) else {}
+    if fee_breakdowns:
+        # Reuse the ITC reconciliation's existing narration-based fee split:
+        # suffix _3 is upsale; the remaining ITC payment fees are loan fees.
+        rows.insert(
+            1,
+            _summary_row(
+                "Itc · Loan",
+                fee_breakdowns.get("commission_charge_itc_payment", _summary()),
+            ),
+        )
+        rows.insert(
+            2,
+            _summary_row(
+                "Itc · Upsale",
+                fee_breakdowns.get("upsales_transaction_fees", _summary()),
+            ),
+        )
+    else:
+        # Preserve compatibility with results created before the split existed.
+        rows.insert(1, _summary_row("Itc", itc.get("itc_charge_summary", _summary())))
+    return rows
 
 
 def settlement_summary_rows(state: Mapping[str, Any]) -> list[dict[str, Any]]:

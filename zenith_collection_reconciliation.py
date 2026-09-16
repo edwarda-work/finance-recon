@@ -41,6 +41,7 @@ from build_reconciliation_template import (
     STYLE_WALLET_FINAL_LABEL,
     STYLE_WALLET_FINAL_MONEY,
     STYLE_WALLET_HEADER,
+    STYLE_WALLET_LINE_ITEM,
     STYLE_WALLET_MONEY,
     STYLE_WALLET_SIGNATURE,
     STYLE_WALLET_TITLE,
@@ -496,18 +497,21 @@ def build_zenith_wallet_ledger_summary(
     def sig(label: str) -> Cell:
         return Cell(label, STYLE_WALLET_SIGNATURE)
 
+    def line(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_LINE_ITEM)
+
     summary_rows = [
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell("ZENITH WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
         ["", "", "", ""],
         [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), wh("Notes")],
         [wb("Balance Per Ledger"), "", wbm(balance), ""],
-        [sig("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
+        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
         [sig("Total Collections"), len(collection_rows), wm(total_collections), "Sum of column C."],
         [wb("Available Funds Before Debit"), "", wbm(available_funds), "Balance Per Ledger + Total Collections + delayed credit."],
         ["", "", "", ""],
         [sig("Total Debit"), len(debit_rows), wm(total_debit), "Sum of column B + delayed debit."],
-        [sig("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
+        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
         ["", "", "", ""],
         [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), "Absolute value of Available Funds Before Debit - Total Debit."],
     ]
@@ -538,8 +542,12 @@ def write_zenith_wallet_ledger_workbook(
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
-    sheet_names = ["Summary", "Cleaned Zenith"]
+    sheet_names = ["Summary", "Zenith Not Found", "Cleaned Zenith"]
     cleaned_rows = list(_rows_from_cleaned_dicts(headers, rows))
+    # Every non-zero Zenith debit or credit is used directly by the ledger.
+    # Keep the requested exception sheet present even when it has no rows.
+    not_found_rows: list[dict[str, str]] = []
+    not_found_sheet_rows = list(_rows_from_cleaned_dicts(headers, not_found_rows))
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml(len(sheet_names)))
@@ -564,6 +572,15 @@ def write_zenith_wallet_ledger_workbook(
         write_worksheet(
             zf,
             "xl/worksheets/sheet2.xml",
+            not_found_sheet_rows,
+            len(not_found_sheet_rows),
+            len(headers),
+            compute_widths(headers, []),
+            style_func=data_style(headers),
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet3.xml",
             cleaned_rows,
             len(cleaned_rows),
             len(headers),

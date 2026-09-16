@@ -23,6 +23,7 @@ from build_reconciliation_template import (
     STYLE_WALLET_FINAL_LABEL,
     STYLE_WALLET_FINAL_MONEY,
     STYLE_WALLET_HEADER,
+    STYLE_WALLET_LINE_ITEM,
     STYLE_WALLET_MONEY,
     STYLE_WALLET_SIGNATURE,
     STYLE_WALLET_TITLE,
@@ -86,7 +87,9 @@ def _row_value(row: dict[str, str], header: str) -> str:
         return row[header]
     wanted = header.casefold()
     for key, value in row.items():
-        if key.casefold() == wanted:
+        # csv.DictReader uses a None key when a data row contains more values
+        # than its header. Ignore that overflow entry during header lookup.
+        if key is not None and str(key).casefold() == wanted:
             return value
     return ""
 
@@ -300,8 +303,20 @@ def iter_source_rows(path: Path) -> Iterable[tuple[int, dict[str, str]]]:
 
 def _add_headers(headers: list[str], new_headers: Iterable[str]) -> None:
     for header in new_headers:
-        if header not in headers:
+        if header is not None and header not in headers:
             headers.append(header)
+
+
+def _require_headers(headers: Iterable[str], *required: str) -> None:
+    """Raise a useful input error when required filtering columns are absent."""
+    available = {str(header).strip().casefold() for header in headers if header is not None}
+    missing = [header for header in required if header.casefold() not in available]
+    if missing:
+        raise ValueError(
+            "Nsano filtering requires the following column(s): "
+            + ", ".join(missing)
+            + ". Check that the file has the correct header row and that data rows align with it."
+        )
 
 
 def load_collection_rows(paths: Iterable[Path]) -> tuple[list[str], list[dict[str, str]]]:
@@ -564,6 +579,23 @@ def _sum_withdrawn_by_detail(rows: Iterable[dict[str, str]], detail_text: str) -
     return len(matches), _sum_positive_column(matches, "Withdrawn")
 
 
+def _vodafone_wallet_not_found_rows(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
+    """Return monetary movements not used by any Vodafone ledger line."""
+    charge_detail = _compact(VODAFONE_CHARGE_DETAIL)
+    transfer_detail = _compact(VODAFONE_LEDGER_TRANSFER_DETAIL)
+    not_found: list[dict[str, str]] = []
+    for row in rows:
+        if amount_to_decimal(_row_value(row, "Paid In")) != 0:
+            continue
+        if amount_to_decimal(_row_value(row, "Withdrawn")) == 0:
+            continue
+        detail = _compact(_row_value(row, "Details"))
+        if charge_detail in detail or transfer_detail in detail:
+            continue
+        not_found.append(row)
+    return not_found
+
+
 def _positive_decimal(value: Any) -> Decimal:
     return abs(amount_to_decimal(value))
 
@@ -645,19 +677,22 @@ def build_vodafone_wallet_ledger_summary(
     def sig(label: str) -> Cell:
         return Cell(label, STYLE_WALLET_SIGNATURE)
 
+    def line(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_LINE_ITEM)
+
     rows_out = [
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell("VODAFONE WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
         ["", "", "", ""],
         [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), wh("Notes")],
         [wb("Balance"), "", wbm(balance), ""],
-        [sig("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
+        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
         [sig("Total Collections"), len(collections_rows), wm(total_collections), "Sum of Paid In."],
         [wb("Available Funds Before Debit"), "", wbm(available_funds), "Balance + Total Collections + delayed credit."],
         ["", "", "", ""],
         [sig("Total Charges"), charge_count, wm(total_charges), f"Withdrawn where Details includes {VODAFONE_CHARGE_DETAIL}."],
-        [sig("Transfer to Bank"), transfer_count, wm(transfer_to_bank), f"Withdrawn where Details includes {VODAFONE_LEDGER_TRANSFER_DETAIL}."],
-        [sig("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
+        [line("Transfer to Bank"), transfer_count, wm(transfer_to_bank), f"Withdrawn where Details includes {VODAFONE_LEDGER_TRANSFER_DETAIL}."],
+        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
         [wb("Total Debit"), "", wbm(total_debit), "Transfer to Bank + Total Charges + delayed debit."],
         ["", "", "", ""],
         [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), "Absolute value of Available Funds Before Debit - Total Debit."],
@@ -683,8 +718,10 @@ def write_vodafone_wallet_ledger_workbook(
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
-    sheet_names = ["Summary", "Cleaned Voda Coll"]
+    sheet_names = ["Summary", "Voda Not Found", "Cleaned Voda Coll"]
     cleaned_rows = list(_rows_for_sheet(headers, rows))
+    not_found_rows = _vodafone_wallet_not_found_rows(rows)
+    not_found_sheet_rows = list(_rows_for_sheet(headers, not_found_rows))
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml(len(sheet_names)))
@@ -709,6 +746,15 @@ def write_vodafone_wallet_ledger_workbook(
         write_worksheet(
             zf,
             "xl/worksheets/sheet2.xml",
+            not_found_sheet_rows,
+            len(not_found_sheet_rows),
+            len(headers),
+            compute_widths(headers, _preview_rows(headers, not_found_rows)),
+            style_func=data_style(headers),
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet3.xml",
             cleaned_rows,
             len(cleaned_rows),
             len(headers),
@@ -770,6 +816,7 @@ def build_nsano_collection_filter_workbook(
     source_paths: Iterable[Path],
 ) -> CollectionFilteringResult:
     headers, rows = load_collection_rows(source_paths)
+    _require_headers(headers, "Result", "Type")
     filtered = filter_collection_rows(rows, NSANO_COLLECTION_FILTERS)
     write_collection_filter_workbook(
         output_path,
