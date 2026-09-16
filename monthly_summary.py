@@ -133,6 +133,7 @@ MONTHLY_RESULT_KEYS = (
     "nsano_wallet_ledger_result",
     "itc_disb_result",
     "itc_wallet_ledger_result",
+    "vodafone_manual_wallet_ledger_result",
     "mtn_manual_disb_result",
     "vodafone_manual_disb_result",
 )
@@ -149,6 +150,7 @@ RUN_STATUS_SPECS = (
     ("nsano_wallet_ledger_result", "Ledger", "Nsano Disb Wallet vs Ledger"),
     ("itc_disb_result", "Disbursement", "ITC Wallet vs Mambu"),
     ("itc_wallet_ledger_result", "Disbursement", "ITC Wallet vs Ledger"),
+    ("vodafone_manual_wallet_ledger_result", "Ledger", "Vodafone Manual Wallet vs Ledger"),
     ("mtn_manual_disb_result", "Disbursement", "MTN Manual Disbursement"),
     ("vodafone_manual_disb_result", "Disbursement", "Vodafone Manual Disbursement"),
 )
@@ -605,6 +607,13 @@ def _run_status_metrics(key: str, result: Mapping[str, Any]) -> tuple[int | str,
                 ("Credit rows", metrics.get("credit_total", 0)),
             ),
         )
+    if key == "vodafone_manual_wallet_ledger_result":
+        rows = int(metrics.get("disbursement_count", 0))
+        return (
+            rows,
+            metrics.get("wallet_statement_balance", ""),
+            _notes(("Vodafone Manual disbursement rows", rows)),
+        )
     return "", "", ""
 
 
@@ -1057,6 +1066,8 @@ def _wallet_summary_rows(snapshot: Mapping[str, Any]) -> list[list[Any]]:
         rows.extend(_nsano_wallet_rows(snapshot["nsano_wallet_ledger_result"].get("metrics", {})))
     if "itc_wallet_ledger_result" in snapshot:
         rows.extend(_itc_wallet_rows(snapshot["itc_wallet_ledger_result"].get("metrics", {})))
+    if "vodafone_manual_wallet_ledger_result" in snapshot:
+        rows.extend(_vodafone_manual_wallet_rows(snapshot["vodafone_manual_wallet_ledger_result"].get("metrics", {})))
     return rows or [["", "", "No wallet ledger workflows have been run yet.", "", "", ""]]
 
 
@@ -1147,6 +1158,18 @@ def _itc_wallet_rows(metrics: Mapping[str, Any]) -> list[list[Any]]:
 
 def _wallet_row(wallet: str, group: str, label: str, count: int | str, amount: Any, notes: str = "") -> list[Any]:
     return [wallet, group, label, count, _money(amount), notes]
+
+
+def _vodafone_manual_wallet_rows(metrics: Mapping[str, Any]) -> list[list[Any]]:
+    return [
+        _wallet_row("Vodafone Manual", "Credit / Available Funds", "Ledger Balance", "", metrics.get("balance", "")),
+        _wallet_row("Vodafone Manual", "Credit / Available Funds", "Delayed Transactions (Credit)", "", metrics.get("delayed_credit", "")),
+        _wallet_row("Vodafone Manual", "Credit / Available Funds", "Available Funds Before Debit", "", metrics.get("available_funds", "")),
+        _wallet_row("Vodafone Manual", "Debit", "Disbursements", int(metrics.get("disbursement_count", 0)), metrics.get("total_disbursement", ""), "Uploaded Vodafone Manual Amount values."),
+        _wallet_row("Vodafone Manual", "Debit", "Delayed Transactions (Debit)", "", metrics.get("delayed_debit", "")),
+        _wallet_row("Vodafone Manual", "Debit", "Total Debit", "", metrics.get("total_debit", "")),
+        _wallet_row("Vodafone Manual", "Balance", "Wallet Statement Balance", "", metrics.get("wallet_statement_balance", "")),
+    ]
 
 
 def _stats(result: Mapping[str, Any], key: str) -> Mapping[str, Any]:

@@ -30,6 +30,7 @@ from collection_filtering import (
     build_mambu_disbursement_filter_workbook,
     build_nsano_collection_filter_workbook,
     build_vodafone_collection_cleanup_workbook,
+    build_vodafone_manual_wallet_ledger_workbook,
     build_vodafone_wallet_ledger_workbook,
 )
 from build_reconciliation_template import (
@@ -609,6 +610,7 @@ ARCHIVABLE_RESULTS = {
     "mambu_disbursement_filtering_result": ("Filtering", "Mambu Disbursement Filtering", "Mambu_Disbursement_Filtered.xlsx"),
     "voda_collection_cleanup_result": ("Filtering", "Voda Collection Cleanup", "Voda_Collection_Cleaned.xlsx"),
     "voda_wallet_ledger_result": ("Ledger", "Voda Wallet vs Ledger", "Voda_Wallet_vs_Ledger.xlsx"),
+    "vodafone_manual_wallet_ledger_result": ("Ledger", "Vodafone Manual Wallet vs Ledger", "Vodafone_Manual_Wallet_vs_Ledger.xlsx"),
     "zenith_wallet_ledger_result": ("Ledger", "Zenith Wallet vs Ledger", "Zenith_Wallet_vs_Ledger.xlsx"),
     "collections_summary_sheet_result": ("Summary", "Collections Recon Summary", "Collections_Recon_Summary.xlsx"),
     "disbursement_summary_sheet_result": ("Summary", "Disbursement Recon Summary", "Disbursement_Recon_Summary.xlsx"),
@@ -2200,6 +2202,18 @@ def _master_ledger_status_rows(state: dict) -> list[dict[str, str]]:
         ) if itc else "",
         "Ledger Balance": f"{_decimal_amount(itc_metrics.get('ledger_balance')):,.2f}" if itc else "",
         "Wallet Statement Balance": f"{_decimal_amount(itc_metrics.get('wallet_statement_balance')):,.2f}" if itc else "",
+    })
+
+    vodafone_manual = state.get("vodafone_manual_wallet_ledger_result")
+    vodafone_manual_metrics = vodafone_manual.get("metrics", {}) if isinstance(vodafone_manual, dict) else {}
+    rows.append({
+        "Workflow": "Vodafone Manual Wallet vs Ledger",
+        "Status": "Ready" if vodafone_manual else "Not run",
+        "Rows": (
+            f"{int(vodafone_manual_metrics.get('disbursement_count', 0)):,} Vodafone Manual disbursements"
+        ) if vodafone_manual else "",
+        "Ledger Balance": f"{_decimal_amount(vodafone_manual_metrics.get('balance')):,.2f}" if vodafone_manual else "",
+        "Wallet Statement Balance": f"{_decimal_amount(vodafone_manual_metrics.get('wallet_statement_balance')):,.2f}" if vodafone_manual else "",
     })
     return rows
 
@@ -4097,6 +4111,16 @@ def _render_filtering_automation(automation_options: list[str], radio_key: str) 
         download_label = "⬇️ Download Voda Wallet vs Ledger File"
         filters = VODAFONE_COLLECTION_CLEANUP_FILTERS
         builder = build_vodafone_wallet_ledger_workbook
+    elif automation == "Vodafone Manual Wallet vs Ledger":
+        title = "Vodafone Manual Wallet vs Ledger"
+        file_label = "Vodafone Manual disbursement file(s) (.xlsx or .csv)"
+        uploader_key = "vodafone_manual_wallet_ledger_chunks"
+        run_key = "run_vodafone_manual_wallet_ledger"
+        result_key = "vodafone_manual_wallet_ledger_result"
+        output_name = "Vodafone_Manual_Wallet_vs_Ledger.xlsx"
+        download_label = "⬇️ Download Vodafone Manual Wallet vs Ledger File"
+        filters = []
+        builder = build_vodafone_manual_wallet_ledger_workbook
     elif automation == "Zenith Wallet vs Ledger":
         title = "Zenith Wallet vs Ledger"
         file_label = "Zenith wallet file(s) (.xlsx or .csv)"
@@ -4129,11 +4153,12 @@ def _render_filtering_automation(automation_options: list[str], radio_key: str) 
         builder = build_mambu_collection_filter_workbook
 
     st.subheader(title)
-    st.caption("Upload one or more collection files. Files can be .xlsx or .csv and will be combined before filtering.")
+    st.caption("Upload one or more source files. Files can be .xlsx or .csv and will be combined before processing.")
 
     is_voda_ledger = automation == "Voda vs Ledger"
+    is_vodafone_manual_ledger = automation == "Vodafone Manual Wallet vs Ledger"
     is_zenith_ledger = automation == "Zenith Wallet vs Ledger"
-    is_wallet_ledger = is_voda_ledger or is_zenith_ledger
+    is_wallet_ledger = is_voda_ledger or is_vodafone_manual_ledger or is_zenith_ledger
     ledger_balance = None
     delayed_transactions = None
     if is_wallet_ledger:
@@ -4142,13 +4167,25 @@ def _render_filtering_automation(automation_options: list[str], radio_key: str) 
             balance_text = st.text_input(
                 "Balance Per Ledger (GHC)" if is_zenith_ledger else "Balance (GHC)",
                 value="0.00",
-                key="zenith_wallet_ledger_balance" if is_zenith_ledger else "voda_wallet_ledger_balance",
+                key=(
+                    "zenith_wallet_ledger_balance"
+                    if is_zenith_ledger
+                    else "vodafone_manual_wallet_ledger_balance"
+                    if is_vodafone_manual_ledger
+                    else "voda_wallet_ledger_balance"
+                ),
             )
         with delayed_col:
             delayed_text = st.text_input(
                 "Delayed Transactions ( GHC )",
                 value="0.00",
-                key="zenith_wallet_ledger_delayed" if is_zenith_ledger else "voda_wallet_ledger_delayed",
+                key=(
+                    "zenith_wallet_ledger_delayed"
+                    if is_zenith_ledger
+                    else "vodafone_manual_wallet_ledger_delayed"
+                    if is_vodafone_manual_ledger
+                    else "voda_wallet_ledger_delayed"
+                ),
             )
         try:
             ledger_balance = Decimal((balance_text or "0").replace(",", "").strip())
@@ -4241,7 +4278,10 @@ def _render_filtering_automation(automation_options: list[str], radio_key: str) 
         st.markdown("#### Ledger Summary")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Balance Per Ledger" if is_zenith_ledger else "Balance", f"{metrics['balance']:,.2f}")
-        m2.metric("Total Collections", f"{metrics['total_collections']:,.2f}")
+        m2.metric(
+            "Total Disbursements" if is_vodafone_manual_ledger else "Total Collections",
+            f"{metrics.get('total_disbursement', metrics.get('total_collections', Decimal('0'))):,.2f}",
+        )
         m3.metric("Available Funds Before Debit", f"{metrics['available_funds']:,.2f}")
         m4.metric("Balance as per Wallet Statement", f"{metrics['wallet_statement_balance']:,.2f}")
 
@@ -4251,6 +4291,11 @@ def _render_filtering_automation(automation_options: list[str], radio_key: str) 
             d2.metric("Total Charges", f"{metrics['total_charges']:,.2f}")
             d3.metric("Transfer to Bank", f"{metrics['transfer_to_bank']:,.2f}")
             d4.metric("Total Debit", f"{metrics['total_debit']:,.2f}")
+        elif is_vodafone_manual_ledger:
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Delayed Transactions", f"{metrics['delayed_transactions']:,.2f}")
+            d2.metric("Total Debit", f"{metrics['total_debit']:,.2f}")
+            d3.metric("Disbursement Rows", f"{metrics.get('disbursement_count', 0):,}")
         else:
             d1, d2, d3 = st.columns(3)
             d1.metric("Delayed Transactions", f"{metrics['delayed_transactions']:,.2f}")
@@ -4296,6 +4341,7 @@ def render_wallet_ledger_filtering_tab() -> None:
     _render_filtering_automation(
         [
             "Voda vs Ledger",
+            "Vodafone Manual Wallet vs Ledger",
             "Zenith Wallet vs Ledger",
         ],
         radio_key="wallet_ledger_filtering_automation",
@@ -4597,6 +4643,7 @@ def render_monthly_summary_tab() -> None:
         "vodafone_manual_disb_result",
         "nsano_wallet_ledger_result",
         "itc_wallet_ledger_result",
+        "vodafone_manual_wallet_ledger_result",
     }
 
     use_snapshot = snapshot if include_collections else {k: v for k, v in snapshot.items() if k in DISBURSEMENT_ONLY_KEYS}

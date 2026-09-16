@@ -700,6 +700,76 @@ def build_vodafone_wallet_ledger_summary(
     return rows_out, metrics
 
 
+def build_vodafone_manual_wallet_ledger_summary(
+    balance: Decimal,
+    delayed_transactions: Decimal,
+    rows: list[dict[str, str]],
+) -> tuple[list[list[Any]], dict[str, Any]]:
+    """Build the Vodafone Manual disbursement wallet-to-ledger summary."""
+    balance = abs(balance)
+    disbursement_rows = [
+        row for row in rows
+        if amount_to_decimal(_row_value(row, "Amount")) != 0
+    ]
+    total_disbursement = _sum_positive_column(disbursement_rows, "Amount")
+    delayed_credit = abs(delayed_transactions) if delayed_transactions > 0 else Decimal("0")
+    delayed_debit = abs(delayed_transactions) if delayed_transactions < 0 else Decimal("0")
+    available_funds = balance + delayed_credit
+    total_debit = total_disbursement + delayed_debit
+    wallet_statement_balance = available_funds - total_debit
+
+    metrics = {
+        "balance": balance,
+        "delayed_transactions": abs(delayed_transactions),
+        "delayed_credit": delayed_credit,
+        "delayed_debit": delayed_debit,
+        "total_disbursement": total_disbursement,
+        "available_funds": available_funds,
+        "total_debit": total_debit,
+        "wallet_statement_balance": wallet_statement_balance,
+        "input_rows": len(rows),
+        "disbursement_count": len(disbursement_rows),
+    }
+
+    def wh(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_HEADER)
+
+    def wb(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_BALANCE_LABEL)
+
+    def wbm(value: Any) -> Cell:
+        return Cell(value, STYLE_WALLET_BALANCE_MONEY)
+
+    def wm(value: Any) -> Cell:
+        return Cell(value, STYLE_WALLET_MONEY)
+
+    def wf(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_FINAL_LABEL)
+
+    def wfm(value: Any) -> Cell:
+        return Cell(value, STYLE_WALLET_FINAL_MONEY)
+
+    def line(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_LINE_ITEM)
+
+    rows_out = [
+        [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
+        [Cell("VODAFONE MANUAL WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
+        ["", "", "", ""],
+        [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), wh("Notes")],
+        [wb("Balance Per Ledger"), "", wbm(balance), "Manual opening ledger balance."],
+        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
+        [wb("Available Funds Before Debit"), "", wbm(available_funds), "Ledger balance + delayed credit."],
+        ["", "", "", ""],
+        [line("Vodafone Manual Disbursements"), len(disbursement_rows), wm(total_disbursement), "Sum of Amount from the uploaded Vodafone Manual file."],
+        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
+        [wb("Total Debit"), "", wbm(total_debit), "Vodafone Manual disbursements + delayed debit."],
+        ["", "", "", ""],
+        [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), "Available Funds Before Debit - Total Debit."],
+    ]
+    return rows_out, metrics
+
+
 def _wallet_summary_style(row_number: int, _col_number: int, value: Any) -> int | None:
     if isinstance(value, Cell):
         return value.style
@@ -909,5 +979,108 @@ def build_vodafone_wallet_ledger_workbook(
         filtered_rows=len(positive_rows),
         filter_counts={"Cleaned Vodafone Collection": len(positive_rows)},
         filter_amounts={"Cleaned Vodafone Collection": sum_amounts(positive_rows)},
+        metrics=metrics,
+    )
+
+
+def load_vodafone_manual_rows(
+    paths: Iterable[Path],
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Load raw or already-cleaned Vodafone Manual disbursement exports."""
+    headers: list[str] = []
+    rows: list[dict[str, str]] = []
+    required = {"id", "date", "amount"}
+    for path in paths:
+        source_headers: list[str] | None = None
+        for row_index, raw_row in enumerate(iter_raw_rows(path)):
+            if source_headers is None:
+                normalized = {_norm(value) for value in raw_row if str(value).strip()}
+                if not required.issubset(normalized):
+                    if row_index >= 25:
+                        break
+                    continue
+                source_headers = [str(value or "").strip() for value in raw_row]
+                _add_headers(headers, source_headers)
+                continue
+            if not any(str(value or "").strip() for value in raw_row):
+                continue
+            normalized_first = _norm(raw_row[0]) if raw_row else ""
+            if normalized_first == "id":
+                continue
+            padded = list(raw_row) + [""] * max(0, len(source_headers) - len(raw_row))
+            rows.append(dict(zip(source_headers, padded)))
+    if not headers:
+        raise ValueError(
+            "Vodafone Manual Wallet vs Ledger could not find a header row containing Id, Date, and Amount."
+        )
+    return headers, rows
+
+
+def write_vodafone_manual_wallet_ledger_workbook(
+    output_path: Path,
+    summary_rows: list[list[Any]],
+    headers: list[str],
+    rows: list[dict[str, str]],
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    sheet_names = ["Summary", "Vodafone Manual"]
+    source_rows = list(_rows_for_sheet(headers, rows))
+
+    with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml(len(sheet_names)))
+        zf.writestr("_rels/.rels", root_rels_xml())
+        zf.writestr("docProps/core.xml", core_xml())
+        zf.writestr("docProps/app.xml", app_xml(sheet_names))
+        zf.writestr("xl/workbook.xml", workbook_xml(sheet_names))
+        zf.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml(len(sheet_names)))
+        zf.writestr("xl/styles.xml", styles_xml())
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet1.xml",
+            summary_rows,
+            len(summary_rows),
+            4,
+            [36, 14, 22, 65],
+            freeze_top_row=False,
+            autofilter=False,
+            merges=["A1:D1", "A2:D2"],
+            style_func=_wallet_summary_style,
+        )
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet2.xml",
+            source_rows,
+            len(source_rows),
+            len(headers),
+            compute_widths(headers, _preview_rows(headers, rows)),
+            style_func=data_style(headers),
+        )
+    os.replace(temp_path, output_path)
+
+
+def build_vodafone_manual_wallet_ledger_workbook(
+    output_path: Path,
+    source_paths: Iterable[Path],
+    balance: Decimal,
+    delayed_transactions: Decimal,
+) -> CollectionFilteringResult:
+    headers, rows = load_vodafone_manual_rows(source_paths)
+    summary_rows, metrics = build_vodafone_manual_wallet_ledger_summary(
+        balance,
+        delayed_transactions,
+        rows,
+    )
+    write_vodafone_manual_wallet_ledger_workbook(
+        output_path,
+        summary_rows,
+        headers,
+        rows,
+    )
+    return CollectionFilteringResult(
+        input_rows=len(rows),
+        filtered_rows=len(rows),
+        filter_counts={"Vodafone Manual Disbursements": metrics["disbursement_count"]},
+        filter_amounts={"Vodafone Manual Disbursements": metrics["total_disbursement"]},
         metrics=metrics,
     )
