@@ -134,6 +134,7 @@ MONTHLY_RESULT_KEYS = (
     "itc_disb_result",
     "itc_wallet_ledger_result",
     "vodafone_manual_wallet_ledger_result",
+    "airtel_tigo_wallet_ledger_result",
     "mtn_manual_disb_result",
     "vodafone_manual_disb_result",
 )
@@ -151,6 +152,7 @@ RUN_STATUS_SPECS = (
     ("itc_disb_result", "Disbursement", "ITC Wallet vs Mambu"),
     ("itc_wallet_ledger_result", "Disbursement", "ITC Wallet vs Ledger"),
     ("vodafone_manual_wallet_ledger_result", "Ledger", "Vodafone Manual Wallet vs Ledger"),
+    ("airtel_tigo_wallet_ledger_result", "Ledger", "Airtel/Tigo Wallet vs Ledger"),
     ("mtn_manual_disb_result", "Disbursement", "MTN Manual Disbursement"),
     ("vodafone_manual_disb_result", "Disbursement", "Vodafone Manual Disbursement"),
 )
@@ -614,6 +616,12 @@ def _run_status_metrics(key: str, result: Mapping[str, Any]) -> tuple[int | str,
             metrics.get("wallet_statement_balance", ""),
             _notes(("Vodafone Manual disbursement rows", rows)),
         )
+    if key == "airtel_tigo_wallet_ledger_result":
+        return (
+            int(metrics.get("wallet_count", 0)),
+            metrics.get("total_wallet_balance", ""),
+            _notes(("Wallets", metrics.get("wallet_count", 0))),
+        )
     return "", "", ""
 
 
@@ -1068,6 +1076,20 @@ def _wallet_summary_rows(snapshot: Mapping[str, Any]) -> list[list[Any]]:
         rows.extend(_itc_wallet_rows(snapshot["itc_wallet_ledger_result"].get("metrics", {})))
     if "vodafone_manual_wallet_ledger_result" in snapshot:
         rows.extend(_vodafone_manual_wallet_rows(snapshot["vodafone_manual_wallet_ledger_result"].get("metrics", {})))
+    if "airtel_tigo_wallet_ledger_result" in snapshot:
+        for wallet_name, metrics in snapshot["airtel_tigo_wallet_ledger_result"].get("metrics", {}).get("wallets", {}).items():
+            rows.extend([
+                _wallet_row(wallet_name, "Credit / Available Funds", "Opening Balance", "", metrics.get("opening_balance", "")),
+                _wallet_row(wallet_name, "Credit / Available Funds", "Total Repayment", "", metrics.get("total_repayment", "")),
+                _wallet_row(wallet_name, "Credit / Available Funds", "Interest Received", "", metrics.get("interest_received", "")),
+                _wallet_row(wallet_name, "Credit / Available Funds", "Delayed Transaction (Credit)", "", metrics.get("delayed_credit", "")),
+                _wallet_row(wallet_name, "Credit / Available Funds", "Available Funds Before Debit", "", metrics.get("available_funds", "")),
+                _wallet_row(wallet_name, "Debit", "Total Disbursement", "", metrics.get("total_disbursement", "")),
+                _wallet_row(wallet_name, "Debit", "Charges", "", metrics.get("charges", "")),
+                _wallet_row(wallet_name, "Debit", "Delayed Transaction (Debit)", "", metrics.get("delayed_debit", "")),
+                _wallet_row(wallet_name, "Debit", "Total Debit", "", metrics.get("total_debit", "")),
+                _wallet_row(wallet_name, "Balance", "Balance as per Wallet", "", metrics.get("wallet_balance", "")),
+            ])
     return rows or [["", "", "No wallet ledger workflows have been run yet.", "", "", ""]]
 
 

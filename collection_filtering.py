@@ -74,6 +74,15 @@ class VodafoneCleanupInspection:
     headers: list[str]
 
 
+AIRTEL_TIGO_WALLETS: tuple[tuple[str, str], ...] = (
+    ("Airtel Repayment", "0266081377"),
+    ("Airtel Disbursement", "0261046218"),
+    ("AirtelTigo Disbursement", "0266930184"),
+    ("Tigo Repayment", "027322026"),
+    ("Tigo Disbursement", "0278796639"),
+)
+
+
 def _norm(value: Any) -> str:
     return str(value or "").strip().casefold()
 
@@ -684,18 +693,24 @@ def build_vodafone_wallet_ledger_summary(
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell("VODAFONE WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
         ["", "", "", ""],
-        [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), wh("Notes")],
+        [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), ""],
         [wb("Balance"), "", wbm(balance), ""],
-        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
-        [sig("Total Collections"), len(collections_rows), wm(total_collections), "Sum of Paid In."],
-        [wb("Available Funds Before Debit"), "", wbm(available_funds), "Balance + Total Collections + delayed credit."],
+        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), ""],
+        [sig("Total Collections"), len(collections_rows), wm(total_collections), ""],
+        [wb("Available Funds Before Debit"), "", wbm(available_funds), ""],
         ["", "", "", ""],
-        [sig("Total Charges"), charge_count, wm(total_charges), f"Withdrawn where Details includes {VODAFONE_CHARGE_DETAIL}."],
-        [line("Transfer to Bank"), transfer_count, wm(transfer_to_bank), f"Withdrawn where Details includes {VODAFONE_LEDGER_TRANSFER_DETAIL}."],
-        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
-        [wb("Total Debit"), "", wbm(total_debit), "Transfer to Bank + Total Charges + delayed debit."],
+        [sig("Total Charges"), charge_count, wm(total_charges), ""],
+        [line("Transfer to Bank"), transfer_count, wm(transfer_to_bank), ""],
+        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), ""],
+        [wb("Total Debit"), "", wbm(total_debit), ""],
         ["", "", "", ""],
-        [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), "Absolute value of Available Funds Before Debit - Total Debit."],
+        [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), ""],
+        ["", "", "", ""],
+        [sig("Prepared By:"), "", sig("Reviewed By:"), ""],
+        [sig("Name:"), "", sig("Name:"), ""],
+        [sig("Title:"), "", sig("Title:"), ""],
+        [sig("Signature:"), "Paste signature image here", sig("Signature:"), "Paste signature image here"],
+        [sig("Date:"), "", sig("Date:"), ""],
     ]
     return rows_out, metrics
 
@@ -752,20 +767,29 @@ def build_vodafone_manual_wallet_ledger_summary(
     def line(label: str) -> Cell:
         return Cell(label, STYLE_WALLET_LINE_ITEM)
 
+    def sig(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_SIGNATURE)
+
     rows_out = [
         [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
         [Cell("VODAFONE MANUAL WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
         ["", "", "", ""],
-        [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), wh("Notes")],
-        [wb("Balance Per Ledger"), "", wbm(balance), "Manual opening ledger balance."],
-        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), "Positive delayed transactions."],
-        [wb("Available Funds Before Debit"), "", wbm(available_funds), "Ledger balance + delayed credit."],
+        [wh("Line Item"), wh("Count"), wh("Amount (GHC)"), ""],
+        [wb("Balance Per Ledger"), "", wbm(balance), ""],
+        [line("Delayed Transactions (Credit)"), "", wm(delayed_credit), ""],
+        [wb("Available Funds Before Debit"), "", wbm(available_funds), ""],
         ["", "", "", ""],
-        [line("Vodafone Manual Disbursements"), len(disbursement_rows), wm(total_disbursement), "Sum of Amount from the uploaded Vodafone Manual file."],
-        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), "Negative delayed transactions shown as debit."],
-        [wb("Total Debit"), "", wbm(total_debit), "Vodafone Manual disbursements + delayed debit."],
+        [line("Vodafone Manual Disbursements"), len(disbursement_rows), wm(total_disbursement), ""],
+        [line("Delayed Transactions (Debit)"), "", wm(delayed_debit), ""],
+        [wb("Total Debit"), "", wbm(total_debit), ""],
         ["", "", "", ""],
-        [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), "Available Funds Before Debit - Total Debit."],
+        [wf("Balance as per Wallet Statement"), "", wfm(wallet_statement_balance), ""],
+        ["", "", "", ""],
+        [sig("Prepared By:"), "", sig("Reviewed By:"), ""],
+        [sig("Name:"), "", sig("Name:"), ""],
+        [sig("Title:"), "", sig("Title:"), ""],
+        [sig("Signature:"), "Paste signature image here", sig("Signature:"), "Paste signature image here"],
+        [sig("Date:"), "", sig("Date:"), ""],
     ]
     return rows_out, metrics
 
@@ -807,10 +831,14 @@ def write_vodafone_wallet_ledger_workbook(
             summary_rows,
             len(summary_rows),
             4,
-            [34, 14, 20, 70],
+            [34, 14, 14, 14],
             freeze_top_row=False,
             autofilter=False,
-            merges=[f"A1:{column_letter(4)}1", f"A2:{column_letter(4)}2"],
+            merges=[
+                "A1:D1", "A2:D2", "C4:D4",
+                *(f"C{row}:D{row}" for row in (5, 6, 7, 8, 10, 11, 12, 13, 15)),
+                "A17:B17", "C17:D17",
+            ],
             style_func=_wallet_summary_style,
         )
         write_worksheet(
@@ -1041,10 +1069,14 @@ def write_vodafone_manual_wallet_ledger_workbook(
             summary_rows,
             len(summary_rows),
             4,
-            [36, 14, 22, 65],
+            [36, 14, 15, 15],
             freeze_top_row=False,
             autofilter=False,
-            merges=["A1:D1", "A2:D2"],
+            merges=[
+                "A1:D1", "A2:D2", "C4:D4",
+                *(f"C{row}:D{row}" for row in (5, 6, 7, 9, 10, 11, 13)),
+                "A15:B15", "C15:D15",
+            ],
             style_func=_wallet_summary_style,
         )
         write_worksheet(
@@ -1084,3 +1116,167 @@ def build_vodafone_manual_wallet_ledger_workbook(
         filter_amounts={"Vodafone Manual Disbursements": metrics["total_disbursement"]},
         metrics=metrics,
     )
+
+
+def calculate_airtel_tigo_wallet_ledger(values: dict[str, Any]) -> dict[str, Decimal]:
+    """Calculate one Airtel/Tigo wallet using directional delayed transactions."""
+    opening_balance = amount_to_decimal(values.get("opening_balance", 0))
+    total_repayment = amount_to_decimal(values.get("total_repayment", 0))
+    interest_received = amount_to_decimal(values.get("interest_received", 0))
+    charges = abs(amount_to_decimal(values.get("charges", 0)))
+    total_disbursement = abs(amount_to_decimal(values.get("total_disbursement", 0)))
+    delayed_transaction = amount_to_decimal(values.get("delayed_transaction", 0))
+    delayed_credit = delayed_transaction if delayed_transaction > 0 else Decimal("0")
+    delayed_debit = abs(delayed_transaction) if delayed_transaction < 0 else Decimal("0")
+    available_funds = opening_balance + total_repayment + interest_received + delayed_credit
+    total_debit = total_disbursement + charges + delayed_debit
+    return {
+        "opening_balance": opening_balance,
+        "total_repayment": total_repayment,
+        "interest_received": interest_received,
+        "charges": charges,
+        "total_disbursement": total_disbursement,
+        "delayed_transaction": delayed_transaction,
+        "delayed_credit": delayed_credit,
+        "delayed_debit": delayed_debit,
+        "available_funds": available_funds,
+        "total_debit": total_debit,
+        "wallet_balance": available_funds - total_debit,
+    }
+
+
+def _airtel_tigo_wallet_detail_rows(
+    wallet_name: str,
+    account_number: str,
+    metrics: dict[str, Decimal],
+) -> list[list[Any]]:
+    def sig(label: str) -> Cell:
+        return Cell(label, STYLE_WALLET_SIGNATURE)
+
+    return [
+        [Cell("FIDO MICRO CREDIT LTD", STYLE_WALLET_COMPANY), "", "", ""],
+        [Cell(f"{wallet_name.upper()} WALLET VS LEDGER", STYLE_WALLET_TITLE), "", "", ""],
+        [Cell(f"Wallet number: {account_number}", STYLE_WALLET_SIGNATURE), "", "", ""],
+        [Cell("Line Item", STYLE_WALLET_HEADER), "", Cell("Amount (GHC)", STYLE_WALLET_HEADER), ""],
+        [Cell("Opening Balance as per Ledger", STYLE_WALLET_BALANCE_LABEL), "", Cell(metrics["opening_balance"], STYLE_WALLET_BALANCE_MONEY), ""],
+        [Cell("Total Repayment", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["total_repayment"], STYLE_WALLET_MONEY), ""],
+        [Cell("Interest Received", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["interest_received"], STYLE_WALLET_MONEY), ""],
+        [Cell("Delayed Transaction (Credit)", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["delayed_credit"], STYLE_WALLET_MONEY), ""],
+        [Cell("Available Funds Before Debit", STYLE_WALLET_BALANCE_LABEL), "", Cell(metrics["available_funds"], STYLE_WALLET_BALANCE_MONEY), ""],
+        ["", "", "", ""],
+        [Cell("Total Disbursement", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["total_disbursement"], STYLE_WALLET_MONEY), ""],
+        [Cell("Charges", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["charges"], STYLE_WALLET_MONEY), ""],
+        [Cell("Delayed Transaction (Debit)", STYLE_WALLET_LINE_ITEM), "", Cell(metrics["delayed_debit"], STYLE_WALLET_MONEY), ""],
+        [Cell("Total Debit", STYLE_WALLET_BALANCE_LABEL), "", Cell(metrics["total_debit"], STYLE_WALLET_BALANCE_MONEY), ""],
+        ["", "", "", ""],
+        [Cell("Balance as per Wallet", STYLE_WALLET_FINAL_LABEL), "", Cell(metrics["wallet_balance"], STYLE_WALLET_FINAL_MONEY), ""],
+        ["", "", "", ""],
+        [sig("Prepared By:"), "", sig("Reviewed By:"), ""],
+        [sig("Name:"), "", sig("Name:"), ""],
+        [sig("Title:"), "", sig("Title:"), ""],
+        [sig("Signature:"), "Paste signature image here", sig("Signature:"), "Paste signature image here"],
+        [sig("Date:"), "", sig("Date:"), ""],
+    ]
+
+
+def build_airtel_tigo_wallet_ledger_workbook(
+    output_path: Path,
+    wallet_inputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the consolidated Airtel/Tigo wallet-to-ledger workbook."""
+    calculated: dict[str, dict[str, Any]] = {}
+    for wallet_name, account_number in AIRTEL_TIGO_WALLETS:
+        calculated[wallet_name] = {
+            "account_number": account_number,
+            **calculate_airtel_tigo_wallet_ledger(wallet_inputs.get(wallet_name, {})),
+        }
+
+    summary_rows: list[list[Any]] = [
+        [Cell("AIRTEL / TIGO WALLET VS LEDGER — SUMMARY", STYLE_WALLET_TITLE), *([""] * 9)],
+        [Cell("Positive delayed transactions are credits; negative delayed transactions are debits.", STYLE_WALLET_SIGNATURE), *([""] * 9)],
+        ["" for _ in range(10)],
+        [
+            Cell("Wallet", STYLE_WALLET_HEADER),
+            Cell("Number", STYLE_WALLET_HEADER),
+            Cell("Opening Balance", STYLE_WALLET_HEADER),
+            Cell("Repayment", STYLE_WALLET_HEADER),
+            Cell("Interest", STYLE_WALLET_HEADER),
+            Cell("Delayed Credit", STYLE_WALLET_HEADER),
+            Cell("Available Funds", STYLE_WALLET_HEADER),
+            Cell("Total Debit", STYLE_WALLET_HEADER),
+            Cell("Delayed Debit", STYLE_WALLET_HEADER),
+            Cell("Wallet Balance", STYLE_WALLET_HEADER),
+        ],
+    ]
+    for wallet_name, account_number in AIRTEL_TIGO_WALLETS:
+        metrics = calculated[wallet_name]
+        summary_rows.append([
+            Cell(wallet_name, STYLE_WALLET_LINE_ITEM),
+            account_number,
+            Cell(metrics["opening_balance"], STYLE_WALLET_MONEY),
+            Cell(metrics["total_repayment"], STYLE_WALLET_MONEY),
+            Cell(metrics["interest_received"], STYLE_WALLET_MONEY),
+            Cell(metrics["delayed_credit"], STYLE_WALLET_MONEY),
+            Cell(metrics["available_funds"], STYLE_WALLET_BALANCE_MONEY),
+            Cell(metrics["total_debit"], STYLE_WALLET_BALANCE_MONEY),
+            Cell(metrics["delayed_debit"], STYLE_WALLET_MONEY),
+            Cell(metrics["wallet_balance"], STYLE_WALLET_FINAL_MONEY),
+        ])
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    sheet_names = ["Summary", *(name[:31] for name, _number in AIRTEL_TIGO_WALLETS)]
+    with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=FAST_XLSX_COMPRESSLEVEL, allowZip64=True) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml(len(sheet_names)))
+        zf.writestr("_rels/.rels", root_rels_xml())
+        zf.writestr("docProps/core.xml", core_xml())
+        zf.writestr("docProps/app.xml", app_xml(sheet_names))
+        zf.writestr("xl/workbook.xml", workbook_xml(sheet_names))
+        zf.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml(len(sheet_names)))
+        zf.writestr("xl/styles.xml", styles_xml())
+        write_worksheet(
+            zf,
+            "xl/worksheets/sheet1.xml",
+            summary_rows,
+            len(summary_rows),
+            10,
+            [27, 17, 19, 17, 17, 18, 20, 18, 18, 20],
+            freeze_top_row=False,
+            autofilter=False,
+            merges=["A1:J1", "A2:J2"],
+            style_func=_wallet_summary_style,
+            show_gridlines=False,
+        )
+        for index, (wallet_name, account_number) in enumerate(AIRTEL_TIGO_WALLETS, start=2):
+            detail_rows = _airtel_tigo_wallet_detail_rows(
+                wallet_name,
+                account_number,
+                calculated[wallet_name],
+            )
+            write_worksheet(
+                zf,
+                f"xl/worksheets/sheet{index}.xml",
+                detail_rows,
+                len(detail_rows),
+                4,
+                [25, 16, 20, 20],
+                freeze_top_row=False,
+                autofilter=False,
+                merges=[
+                    "A1:D1", "A2:D2", "A3:D3",
+                    "A4:B4", "C4:D4",
+                    *(f"A{row}:B{row}" for row in (5, 6, 7, 8, 9, 11, 12, 13, 14, 16)),
+                    *(f"C{row}:D{row}" for row in (5, 6, 7, 8, 9, 11, 12, 13, 14, 16)),
+                    "A18:B18", "C18:D18",
+                ],
+                style_func=_wallet_summary_style,
+                show_gridlines=False,
+            )
+    os.replace(temp_path, output_path)
+    return {
+        "wallets": calculated,
+        "wallet_count": len(calculated),
+        "total_available_funds": sum((m["available_funds"] for m in calculated.values()), Decimal("0")),
+        "total_debit": sum((m["total_debit"] for m in calculated.values()), Decimal("0")),
+        "total_wallet_balance": sum((m["wallet_balance"] for m in calculated.values()), Decimal("0")),
+    }
